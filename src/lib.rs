@@ -10,3 +10,5 @@ pub mod http;
 pub use client::*;
 
 pub mod activity;
+pub mod pulls;
+pub mod issues;

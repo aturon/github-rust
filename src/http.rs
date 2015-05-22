@@ -2,6 +2,7 @@ use ::response::*;
 use ::error::*;
 
 use std::str;
+use std::result;
 
 use curl::http as curl_http;
 
@@ -12,11 +13,13 @@ use rustc_serialize::Decodable;
 /// to enforce the use of the supported GitHub API, which is version 3.
 static API_ACCEPT_HEADER: &'static str = "application/vnd.github.v3+json";
 
+pub type Result<T> = result::Result<(Vec<T>, Response), ClientError>;
+
 /// A simplistic function that wraps around the behaviour of an
 /// http get-request as defined in `curl`.
 /// As the library gets more complete, a more complete and complex
 /// approach might be needed.
-pub fn get<R: Decodable>(user: &str, url: &str, opts: Option<Vec<(&str, &str)>>) -> Result<(Vec<R>, Response), ClientError> {
+pub fn get<R: Decodable>(user: &str, url: &str, opts: Option<Vec<(&str, &str)>>) -> Result<R> {
     // Creating an empty request with header info needed for all requests.
     let mut handle = curl_http::handle();
     let mut request = handle.get(url)
