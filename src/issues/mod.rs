@@ -9,6 +9,7 @@ use http;
 /// Information provided from github about issues. Very incomplete!
 #[derive(Debug, RustcDecodable)]
 pub struct Issue {
+    pub number: u64,
     pub url: String,
     pub title: String,
     pub html_url: String,
