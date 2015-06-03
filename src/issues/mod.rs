@@ -24,10 +24,16 @@ pub struct Label {
 
 pub fn list_issues(client: &Client, user: &str, repo: &str, labels: &str)
                           -> http::Result<Issue> {
-    http::get(&client.user_agent,
-              &format!("{}repos/{}/{}/issues?per_page=100&labels={}",
-                       client.base_url, user, repo, labels),
-              None)
+    let res = http::get(
+        &client.user_agent,
+        &format!("{}repos/{}/{}/issues?per_page=100&labels={}",
+                 client.base_url, user, repo, labels),
+        None);
+    if let Ok((ref vec, _)) = res {
+        println!("`{}repos/{}/{}/issues?per_page=100&labels={}` => {}",
+                 client.base_url, user, repo, labels, vec.len());
+    }
+    res
 }
 
 impl Issue {

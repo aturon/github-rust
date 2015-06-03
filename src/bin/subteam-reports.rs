@@ -23,6 +23,7 @@ Options:
     --path PATH         Location of subteam repository (defaults to cwd)
     --date DATE         Date to use for reports (defaults to today)
     -f, --force         Overwrite any existing reports
+    -h, --help          Print this message
 ";
 
 #[derive(RustcDecodable)]
@@ -71,6 +72,8 @@ fn gen_rfcs(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
         list_issues(&client, "rust-lang", "rfcs", team.label())
             .unwrap().0.into_iter().rev()
             .partition(Issue::is_pr);
+    let (fcps, normal_pulls): (Vec<_>, Vec<_>) = pulls.into_iter()
+        .partition(|i| i.labels.iter().any(|lbl| lbl.name == "final-comment-period"));
 
     try!(writeln!(file, "### RFC phase\n"));
 
@@ -80,8 +83,12 @@ fn gen_rfcs(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
             try!(writeln!(file, "  {}", issue.title));
         }
     }
-    for pr in pulls {
+    for pr in normal_pulls {
         try!(writeln!(file, "- [PR #{}]({}):", pr.number, pr.html_url));
+        try!(writeln!(file, "  {}", pr.title));
+    }
+    for pr in fcps {
+        try!(writeln!(file, "- [FCP PR #{}]({}):", pr.number, pr.html_url));
         try!(writeln!(file, "  {}", pr.title));
     }
 
@@ -89,9 +96,9 @@ fn gen_rfcs(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
 }
 
 fn gen_issue_list(client: &Client, alt_repo: Option<&str>,
-                  label: &str, file: &mut File, desc: &str) -> io::Result<()> {
+                  label: &str, file: &mut File, desc: &str, issues_only: bool) -> io::Result<()> {
     let issues = list_issues(&client, "rust-lang", alt_repo.unwrap_or("rust"), &label)
-        .unwrap().0.into_iter().rev().filter(|i| !i.is_pr());
+        .unwrap().0.into_iter().rev().filter(|i| !issues_only || !i.is_pr());
 
     for issue in issues {
         try!(writeln!(file, "- [{} #{}]({}):", desc, issue.number, issue.html_url));
@@ -102,17 +109,21 @@ fn gen_issue_list(client: &Client, alt_repo: Option<&str>,
 
 fn gen_impl_phase(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
     try!(writeln!(file, "### Implementation phase\n"));
-    gen_issue_list(client, None, &format!("{},B-RFC-approved", team.label()), file, "Issue");
-    gen_issue_list(client, None, &format!("{},final-comment-period", team.label()), file, "FCP PR ");
+    try!(gen_issue_list(client, None, &format!("{},B-RFC-approved", team.label()),
+                        file, "Issue", true));
+    try!(gen_issue_list(client, None, &format!("{},final-comment-period", team.label()),
+                        file, "FCP PR ", false));
     Ok(())
 }
 
 fn gen_high_issues(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
     try!(writeln!(file, "### High priority issues\n"));
-    gen_issue_list(client, None, &format!("{},P-high", team.label()), file, "Issue");
+    try!(gen_issue_list(client, None, &format!("{},P-high", team.label()),
+                        file, "Issue", true));
 
     if team == Team::Tools {
-        gen_issue_list(client, Some("Cargo"), "P-high", file, "Cargo Issue");
+        try!(gen_issue_list(client, Some("Cargo"), "P-high",
+                            file, "Cargo Issue", true));
     }
 
     Ok(())
@@ -120,7 +131,8 @@ fn gen_high_issues(client: &Client, team: Team, file: &mut File) -> io::Result<(
 
 fn gen_needs_decision(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
     try!(writeln!(file, "### Needs decision\n"));
-    gen_issue_list(client, None, &format!("{},I-needs-decision", team.label()), file, "Issue");
+    try!(gen_issue_list(client, None, &format!("{},I-needs-decision", team.label()),
+                        file, "Issue", false));
     Ok(())
 }
 
@@ -136,7 +148,8 @@ fn gen_reports() -> io::Result<()> {
     file_name.set_extension("md");
     let client = &Client::new("aturon");
 
-    for category in [Libs, Lang, Tools, Compiler].iter() {
+    //for category in [Libs, Lang, Tools, Compiler].iter() {
+    for category in [Libs].iter() {
         let full_path = path.join(category.dir()).join("reports").join(&file_name);
         if full_path.exists() && !args.flag_force {
             return Err(
