@@ -12,12 +12,11 @@ use std::fs::File;
 
 use github::Client;
 use github::issues::{Issue, list_issues};
-use github::pulls::list_pulls;
 
 use docopt::Docopt;
 
 static USAGE: &'static str = "
-Usage: subteam-reports [options]
+Usage: subteam-reports [options] <team>...
 
 Options:
     --path PATH         Location of subteam repository (defaults to cwd)
@@ -28,6 +27,7 @@ Options:
 
 #[derive(RustcDecodable)]
 struct Args {
+    arg_team: Vec<String>,
     flag_path: Option<String>,
     flag_date: Option<String>,
     flag_force: bool,
@@ -47,14 +47,32 @@ enum Team {
     Lang,
 }
 
+const DIRS: &'static [(Team, &'static str)] = &[
+    (Team::Tools, "tools"),
+    (Team::Libs, "libs"),
+    (Team::Compiler, "compiler"),
+    (Team::Lang, "lang"),
+    ];
+
 impl Team {
-    fn dir(&self) -> &str {
-        match *self {
-            Team::Tools => "tools",
-            Team::Libs => "libs",
-            Team::Compiler => "compiler",
-            Team::Lang => "lang",
+    fn with_name(s: &str) -> Result<Team, &str> {
+        match
+            DIRS.iter()
+                .filter(|&&(_, dir)| dir == s)
+                .map(|&(team, _)| team)
+                .next()
+        {
+            Some(v) => Ok(v),
+            None => Err(s),
         }
+    }
+
+    fn dir(self) -> &'static str {
+        DIRS.iter()
+            .filter(|&&(team, _)| team == self)
+            .map(|&(_, dir)| dir)
+            .next()
+            .unwrap()
     }
 
     fn label(&self) -> &str {
@@ -137,8 +155,6 @@ fn gen_needs_decision(client: &Client, team: Team, file: &mut File) -> io::Resul
 }
 
 fn gen_reports() -> io::Result<()> {
-    use Team::*;
-
     let args = parse_args();
     let path = PathBuf::from(args.flag_path.unwrap_or(".".to_string()));
     let date = args.flag_date.unwrap_or_else(|| {
@@ -148,14 +164,26 @@ fn gen_reports() -> io::Result<()> {
     file_name.set_extension("md");
     let client = &Client::new("aturon");
 
-    //for category in [Libs, Lang, Tools, Compiler].iter() {
-    for category in [Libs].iter() {
-        let full_path = path.join(category.dir()).join("reports").join(&file_name);
-        if full_path.exists() && !args.flag_force {
+    let categories: Result<Vec<Team>, &str> =
+        args.arg_team
+            .iter()
+            .map(|s| Team::with_name(s))
+            .collect();
+    let categories = match categories {
+        Ok(v) => v,
+        Err(bad_name) => {
             return Err(
                 io::Error::new(io::ErrorKind::Other,
-                               format!("The file `{}` already exists; use `-f` to overwrite.",
-                                       full_path.display())));
+                               format!("unrecognized team name `{}`", bad_name)));
+        }
+    };
+
+    for category in categories {
+        let full_path = path.join(category.dir()).join("reports").join(&file_name);
+        if full_path.exists() && !args.flag_force {
+            println!("Warning: The file `{}` already exists; use `-f` to overwrite.",
+                     full_path.display());
+            continue;
         }
 
         let mut file = try!(File::create(full_path));
