@@ -95,19 +95,19 @@ fn gen_rfcs(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
 
     try!(writeln!(file, "### RFC phase\n"));
 
-    for issue in issues {
-        if issue.labels.iter().any(|label| label.name == "P-high") {
-            try!(writeln!(file, "- [Issue #{}]({}):", issue.number, issue.html_url));
-            try!(writeln!(file, "  {}", issue.title));
-        }
+    for pr in fcps {
+        try!(writeln!(file, "- [FCP PR #{}]({}):", pr.number, pr.html_url));
+        try!(writeln!(file, "  {}", pr.title));
     }
     for pr in normal_pulls {
         try!(writeln!(file, "- [PR #{}]({}):", pr.number, pr.html_url));
         try!(writeln!(file, "  {}", pr.title));
     }
-    for pr in fcps {
-        try!(writeln!(file, "- [FCP PR #{}]({}):", pr.number, pr.html_url));
-        try!(writeln!(file, "  {}", pr.title));
+    for issue in issues {
+        if issue.labels.iter().any(|label| label.name == "P-high") {
+            try!(writeln!(file, "- [Issue #{}]({}):", issue.number, issue.html_url));
+            try!(writeln!(file, "  {}", issue.title));
+        }
     }
 
     Ok(())
@@ -115,10 +115,16 @@ fn gen_rfcs(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
 
 fn gen_issue_list(client: &Client, alt_repo: Option<&str>,
                   label: &str, file: &mut File, desc: &str, issues_only: bool) -> io::Result<()> {
-    let issues = list_issues(&client, "rust-lang", alt_repo.unwrap_or("rust"), &label)
+    let all_issues = list_issues(&client, "rust-lang", alt_repo.unwrap_or("rust"), &label)
         .unwrap().0.into_iter().rev().filter(|i| !issues_only || !i.is_pr());
+    let (fcps, normal_issues): (Vec<_>, Vec<_>) = all_issues.into_iter()
+        .partition(|i| i.labels.iter().any(|lbl| lbl.name == "final-comment-period"));
 
-    for issue in issues {
+    for issue in fcps {
+        try!(writeln!(file, "- [FCP {} #{}]({}):", desc, issue.number, issue.html_url));
+        try!(writeln!(file, "  {}", issue.title));
+    }
+    for issue in normal_issues {
         try!(writeln!(file, "- [{} #{}]({}):", desc, issue.number, issue.html_url));
         try!(writeln!(file, "  {}", issue.title));
     }
@@ -129,8 +135,13 @@ fn gen_impl_phase(client: &Client, team: Team, file: &mut File) -> io::Result<()
     try!(writeln!(file, "### Implementation phase\n"));
     try!(gen_issue_list(client, None, &format!("{},B-RFC-approved", team.label()),
                         file, "Issue", true));
-    try!(gen_issue_list(client, None, &format!("{},final-comment-period", team.label()),
-                        file, "FCP PR ", false));
+    Ok(())
+}
+
+fn gen_stab_phase(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
+    try!(writeln!(file, "### Stabilization phase\n"));
+    try!(gen_issue_list(client, None, &format!("{},B-unstable", team.label()),
+                        file, "Issue", true));
     Ok(())
 }
 
@@ -148,7 +159,7 @@ fn gen_high_issues(client: &Client, team: Team, file: &mut File) -> io::Result<(
 }
 
 fn gen_needs_decision(client: &Client, team: Team, file: &mut File) -> io::Result<()> {
-    try!(writeln!(file, "### Needs decision\n"));
+    try!(writeln!(file, "### Issues needing a decision\n"));
     try!(gen_issue_list(client, None, &format!("{},I-needs-decision", team.label()),
                         file, "Issue", false));
     Ok(())
@@ -189,14 +200,19 @@ fn gen_reports() -> io::Result<()> {
         let mut file = try!(File::create(full_path));
         try!(writeln!(&mut file, "# Subteam report: {} {}\n",
                       category.dir(), date));
+        try!(writeln!(&mut file, "## Highlights\n"));
+
         try!(writeln!(&mut file, "## Dashboard\n"));
-        try!(gen_rfcs(&client, category.clone(), &mut file));
+
+        try!(gen_stab_phase(&client, category.clone(), &mut file));
         try!(writeln!(&mut file, ""));
         try!(gen_impl_phase(&client, category.clone(), &mut file));
         try!(writeln!(&mut file, ""));
-        try!(gen_high_issues(&client, category.clone(), &mut file));
-        try!(writeln!(&mut file, ""));
         try!(gen_needs_decision(&client, category.clone(), &mut file));
+        try!(writeln!(&mut file, ""));
+        try!(gen_rfcs(&client, category.clone(), &mut file));
+        try!(writeln!(&mut file, ""));
+        try!(gen_high_issues(&client, category.clone(), &mut file));
     }
 
     Ok(())
