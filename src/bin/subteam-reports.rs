@@ -165,6 +165,16 @@ fn gen_needs_decision(client: &Client, team: Team, file: &mut File) -> io::Resul
     Ok(())
 }
 
+type SectionGen = fn(&Client, Team, &mut File) -> io::Result<()>;
+
+fn gen_sections(client: &Client, team: Team, file: &mut File, sections: &[SectionGen]) -> io::Result<()> {
+    for section in sections {
+        try!(section(client, team, file));
+        try!(writeln!(file, ""));
+    }
+    Ok(())
+}
+
 fn gen_reports() -> io::Result<()> {
     let args = parse_args();
     let path = PathBuf::from(args.flag_path.unwrap_or(".".to_string()));
@@ -204,15 +214,13 @@ fn gen_reports() -> io::Result<()> {
 
         try!(writeln!(&mut file, "## Dashboard\n"));
 
-        try!(gen_stab_phase(&client, category.clone(), &mut file));
-        try!(writeln!(&mut file, ""));
-        try!(gen_impl_phase(&client, category.clone(), &mut file));
-        try!(writeln!(&mut file, ""));
-        try!(gen_needs_decision(&client, category.clone(), &mut file));
-        try!(writeln!(&mut file, ""));
-        try!(gen_rfcs(&client, category.clone(), &mut file));
-        try!(writeln!(&mut file, ""));
-        try!(gen_high_issues(&client, category.clone(), &mut file));
+        try!(gen_sections(&client, category, &mut file, &[
+            gen_high_issues,
+            gen_needs_decision,
+            gen_rfcs,
+            gen_impl_phase,
+            gen_stab_phase,
+        ]));
     }
 
     Ok(())
